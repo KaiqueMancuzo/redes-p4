@@ -43,22 +43,45 @@ class Enlace:
     def __init__(self, linha_serial):
         self.linha_serial = linha_serial
         self.linha_serial.registrar_recebedor(self.__raw_recv)
+        self.buffer = b''
 
     def registrar_recebedor(self, callback):
         self.callback = callback
 
     def enviar(self, datagrama):
-        # TODO: Preencha aqui com o código para enviar o datagrama pela linha
-        # serial, fazendo corretamente a delimitação de quadros e o escape de
-        # sequências especiais, de acordo com o protocolo CamadaEnlace (RFC 1055).
-        pass
+        # Realiza o escape dos bytes 0xC0 e 0xDB
+        datagrama = datagrama.replace(b'\xDB', b'\xDB\xDD')
+        datagrama = datagrama.replace(b'\xC0', b'\xDB\xDC')
+
+        # Adiciona o byte especial 0xC0 no início e no fim do quadro
+        quadro = b'\xC0' + datagrama + b'\xC0'
+        
+        # Envia o quadro pela linha serial
+        self.linha_serial.enviar(quadro)
 
     def __raw_recv(self, dados):
-        # TODO: Preencha aqui com o código para receber dados da linha serial.
-        # Trate corretamente as sequências de escape. Quando ler um quadro
-        # completo, repasse o datagrama contido nesse quadro para a camada
-        # superior chamando self.callback. Cuidado pois o argumento dados pode
-        # vir quebrado de várias formas diferentes - por exemplo, podem vir
-        # apenas pedaços de um quadro, ou um pedaço de quadro seguido de um
-        # pedaço de outro, ou vários quadros de uma vez só.
-        pass
+        # Adiciona os dados recebidos ao buffer
+        self.buffer += dados
+
+        # Separa os dados em quadros completos e o restante do buffer
+        quadros, self.buffer = self.buffer.split(b'\xc0')[:-1], self.buffer.split(b'\xc0')[-1]
+
+        # Processa cada quadro completo
+        for quadro in quadros:
+            # Remove quadros vazios
+            if quadro != b'':
+                # Remove as sequências de escape
+                datagrama = self.desescape(quadro)
+
+                try:
+                    # Chama o callback com o datagrama original
+                    self.callback(datagrama)
+                except:
+                    import traceback
+                    traceback.print_exc()
+
+    def desescape(self, quadro):
+        # Realiza o unescape dos bytes de escape
+        quadro = quadro.replace(b'\xDB\xDC', b'\xC0')
+        quadro = quadro.replace(b'\xDB\xDD', b'\xDB')
+        return quadro
